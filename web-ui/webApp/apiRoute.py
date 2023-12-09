@@ -11,7 +11,7 @@ from flask_mail import Message
 import time, random
 
 #pin variables
-stato = "5" #stato == start stop
+stato = "26" #stato == start stop
 
 genOtpStartTime = 0
 
@@ -56,7 +56,7 @@ def verifyEmailRequest():
 
         if logged_user.verifiedEmail != "True":
 
-            return {"error":"email verification not completed"}
+            return {"error":"email verification not completed"}, 403
         
 @app.before_request
 def verifyUserLogin():
@@ -65,15 +65,15 @@ def verifyUserLogin():
 
         if 'access_token_cookie' in request.cookies and request.method != "PUT":   
 
-            return ({"Error": "User is logged in, use 'PUT' method."})
+            return ({"Error": "User is logged in, use 'PUT' method."}), 401
         
         if 'access_token_cookie' not in request.cookies and request.method != "GET":
 
-            return ({"Error": "User is logged out, use 'GET' method."})
+            return ({"Error": "User is logged out, use 'GET' method."}), 401
      
 class refreshApi(Resource):
     @jwt_required(refresh=True)
-    def get(self):
+    def post(self):
 
         refresh_token = get_jwt()["jti"]
         id = get_jwt_identity()
@@ -89,7 +89,7 @@ class pinStatusApi(Resource):
         self.parser = reqparse.RequestParser()
         self.parser.add_argument("pin", required=True)
 
-    def get(self):
+    def post(self):
 
         args = self.parser.parse_args()
         pin = args["pin"]
@@ -149,7 +149,7 @@ class updatePinApi(Resource):
 
         if status == "0":
             
-            return {"Alert":"Esp is offline, can't update"}
+            return {"Alert":"Esp is offline, can't update"}, 503
         
         query.switchState = newState
 
@@ -182,9 +182,14 @@ class queryApi(Resource):
         pin = args["pin"]
 
         query = esp32.query.filter_by(esp32pin=pin).first()
-        state = query.switchState
 
-        return jsonify(success = state)
+        if query:
+
+            state = query.switchState
+
+            return jsonify(success = state)
+        
+        return ({"error": "invalid pin"}), 404
 
 class synchardchangesApi(Resource):
 
@@ -332,7 +337,7 @@ class registerApi(Resource):
 
         genOtpStartTime = otpStartTime
 
-        msg = Message('Api email Verification', recipients=[email])
+        msg = Message('Email Verification', recipients=[email])
         msg.html = render_template("emailVerification.html", otp=otp)
 
         try:
@@ -569,7 +574,7 @@ class resetPasswordApi(Resource):
 
         if not check_password_hash(logged_user.password, oldPass):
 
-            return ({"Error":"Incorrect old password, logout to reset password or try again"})
+            return ({"Error":"Incorrect old password, logout to reset password or try again"}), 400
         
         logged_user.password = generate_password_hash(newPass)
 
@@ -725,19 +730,19 @@ class updateRoleApi(Resource):
 
         if not update_user:
 
-            return ({"Error": "Invalid Email"})
+            return ({"Error": "Invalid Email"}), 400
         
         if update_user.verifiedEmail != "True":
 
-            return ({"Error": "User has not verified thier email"})
+            return ({"Error": "User has not verified thier email"}), 400
         
         if newRole != "user" and newRole != "admin":
 
-            return ({"Error": "Unknown role"})
+            return ({"Error": "Unknown role"}), 400
         
         if update_user.role == newRole:
 
-            return ({"Msg": "Role not updated but same"})
+            return ({"Msg": "Role not updated but same"}), 304
         
         update_user.role = newRole
 
@@ -776,6 +781,10 @@ class deleteApi(Resource):
         if role != "owner":
 
             return ({"Error":"not authorized"}), 401
+        
+        if userEmail == email:
+
+            return ({"Error":"owner cannot be deleted"}), 401
         
         del_user = users.query.filter_by(email=userEmail).first()
 
