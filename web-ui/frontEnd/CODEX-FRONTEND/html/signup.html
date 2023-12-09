@@ -1,111 +1,76 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{{url_for('static', filename='/css/forgettenPassword.css') }}"/>
-    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="stylesheet" href="../css/signin.css">
+    <!-- <link rel="stylesheet" href="{{url_for('static', filename='/css/forgettenPassword.css') }}" /> -->
+    <!-- <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon"> -->
 
     <title>Create Account</title>
-    
+
 </head>
+
 <body>
     <div class="register__con">
-        <div class="container">
-            <form id="form" method="post" action="">
-        
-                <h1 id="h1">Sign Up</h1>
+        <div class="login wrap">
 
-                {% with messages = get_flashed_messages() %}
-                    {% if messages %}
-                        {% for message in messages %}
-                            {{message}}
-                        {% endfor %}
-                    {% endif %}
-                {% endwith %}
+            <form id="form" name="loginForm">
 
-                {{ form.csrf_token }}
+                <h1 id="h1" class="h1">Signup</h1>
 
-                <div class="input-control">
-        
-                    <div class="text">
-        
-                        {{ form.username.label }}
-        
-                    </div>
-        
-                    {{ form.username }}
-        
-                </div>
+                <input placeholder="Username" id="username" name="username" type="text" autocomplete="additional-name">
+                <input placeholder="Email" id="email" name="email" type="email" autocomplete="additional-name">
 
-                <ul>
-                    {% for errors in form.username.errors %}
-                        <li style="color:red;">{{ errors }}</li>
-                    {% endfor %}
-                </ul>
-        
-                <div class="input-control">
-        
-                    <div class="text">
-        
-                        {{ form.email.label }}
-        
-                    </div>
-        
-                    {{ form.email }}
-        
-                </div>
+                <input placeholder="Password" id="password" name="password" type="password">
+                <input placeholder="ConfirmPassword" id="Confirmpassword" name="password" type="password">
 
-                <ul>
-                    {% for errors in form.email.errors %}
-                        <li style="color:red;">{{ errors }}</li>
-                    {% endfor %}
-                </ul>
-
-                <div class="input-control">
-        
-                    <div class="text">
-        
-                        {{ form.password.label }}
-        
-                    </div>
-        
-                    {{ form.password }}
-        
-                </div>
-
-                <ul>
-                    {% for errors in form.password.errors %}
-                        <li style="color:red;">{{ errors }}</li>
-                    {% endfor %}
-                </ul>
-
-                <div class="input-control">
-        
-                    <div class="text">
-        
-                        {{ form.confirmpass.label }}
-        
-                    </div>
-        
-                    {{ form.confirmpass }}
-        
-                </div>
-
-                <ul>
-                    {% for errors in form.confirmpass.errors %}
-                        <li style="color:red;">{{ errors }}</li>
-                    {% endfor %}
-                </ul>
-
-                {{ form.reg(class="signup") }}
-        
+                <input value="Login" class="btn" type="submit">
             </form>
-
-            <a href="{{ url_for('login') }}" class="navbar-item">login</a>
-            
+            <div class="urledit">
+                <a href="./signup.html" class="navbar-item">Signup</a>
+                <a href="./forgetPassEmail.html" class="navbar-item">reset password</a>
+            </div>
         </div>
     </div>
 </body>
+
 </html>
+
+<script>
+    document.getElementById('form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        const username = document.getElementById('username').value;
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const ConfirmPassword = document.getElementById('Confirmpassword').value;
+
+
+        if (password == ConfirmPassword) {
+            fetch('https://industrialiot.onrender.com/api/signup', {
+                method: "POST",
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, email, password })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status == "success") {
+                        alert("Signup Success");
+                        window.location.href = "/index.html";
+                    } else {
+                        alert("Signup Failed");
+                    }
+                })
+                .catch(err => console.log(err));
+
+
+        } else {
+            alert("Password not match");
+        }
+
+    });
+</script>

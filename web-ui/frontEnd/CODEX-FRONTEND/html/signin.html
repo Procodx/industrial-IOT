@@ -16,7 +16,7 @@
     <div class="register__con">
         <div class="login wrap">
 
-            <form id="form" name="loginForm" onsubmit="event.preventDefault(); submitForm()">
+            <form id="form" name="loginForm" >
 
                 <h1 id="h1" class="h1">Login</h1>
 
@@ -35,3 +35,37 @@
 </body>
 
 </html>
+
+<script>
+    // Your JavaScript code here
+    document.getElementById('form').addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      //fetch('serveo.net:4962/api/login', {
+       fetch('https://industrialiot.onrender.com/api/login', {
+        method: "POST",
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.token) {
+            //it is supposed to redirec to dashboard page after getting the token, alert is temporary
+          alert(`Login successful! Access Token: ${data.token.access_token}`);
+          window.location.replace("/index.html");
+        } else {
+           alert( `Error: ${data.msg}`)
+        }
+      })
+      .catch(error => {
+       alert( 'An error occurred. Please try again later.');
+      });
+    });
+  </script>
+
+<!-- onsubmit="event.preventDefault(); submitForm()" -->

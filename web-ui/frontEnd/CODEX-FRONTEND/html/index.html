@@ -128,12 +128,12 @@
                         <td>{{ user.email }}</td>
                         <td>
                             <div class="dropdown">
-                                {{ user.role }}
+                              
                                 <!-- <span class="role-text">{{ user.role }}</span> -->
                                 <div class="dropdown-content">
-                                    {% if user.role == "admin" %}
+                                   
                                     <a href="#" class="message">Demote admin</a>
-                                    {% elif user.role == "user" %}
+                        
                                     <a href="#" class="message">Promote admin</a>
                                     {% endif %}
                                 </div>
