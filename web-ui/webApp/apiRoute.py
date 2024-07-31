@@ -20,15 +20,15 @@ trackLogin = ['/api/resetpass', '/api/resetpass/']
 
 @jwt.unauthorized_loader
 def handle_unauthorized(callback):
-    return jsonify({"error": "Missing Authorization Header"}), 401
+    return ({"error": "Missing Authorization Header"}), 401
 
 @jwt.expired_token_loader
 def my_expired_token_callback(jwt_header, jwt_payload):
-    return jsonify({"message": "expired token"}), 401
+    return ({"message": "expired token"}), 401
 
 @jwt.invalid_token_loader
 def handle_invalid(error):
-    return jsonify({"message": "invalid token",
+    return ({"message": "invalid token",
                     "error":error}), 401    
 
 @jwt.token_in_blocklist_loader
@@ -46,8 +46,15 @@ def verifyEmailRequest():
     if request.path in verifyEmailRoute:
 
         identity = request.headers.get('Authorization')
-        token = identity[len("Bearer "):]
-        
+
+        try:
+
+            token = identity[len("Bearer "):]
+
+        except:
+
+            return ({"error":"no authorization header in request"}), 400
+
         decoded_token = decode_token(token)
         payload = decoded_token['sub']
 
@@ -56,8 +63,8 @@ def verifyEmailRequest():
 
         if logged_user.verifiedEmail != "True":
 
-            return {"error":"email verification not completed"}, 403
-        
+            return ({"error":"email verification not completed"}), 403
+
 @app.before_request
 def verifyUserLogin():
 
@@ -80,7 +87,7 @@ class refreshApi(Resource):
         claims = {"refresh_jti":refresh_token}
         access_token = create_access_token(identity=id, additional_claims=claims)
 
-        return jsonify(access_token=access_token)
+        return jsonify(access_token=access_token), 200
 
 class pinStatusApi(Resource):
     @jwt_required()
@@ -99,7 +106,7 @@ class pinStatusApi(Resource):
 
         if status == "0":
 
-            return {"Alert":"Esp is offline. Current state unknown"}
+            return jsonify({"Alert":"Esp is offline. Current state unknown"}), 503
 
         if pin == stato:
             
@@ -108,8 +115,8 @@ class pinStatusApi(Resource):
 
             return ({"motor state": state}), 200
         
-        return ({"error":"invalid pin"})
-
+        return ({"error":"invalid pin"}), 400
+ 
 # pnon ==> pin name or number
 class updatePinApi(Resource):
     @jwt_required()
@@ -118,14 +125,14 @@ class updatePinApi(Resource):
         self.parser = reqparse.RequestParser()
         self.parser.add_argument("pin", required=True)
         self.parser.add_argument("state", required=True)
-
-    def put(self):
         
+    def put(self):
         user = get_jwt_identity()
         role = user["role"]
 
         if role == "user":
-            return {"error":"not authorized"}, 401
+        
+            return ({"error":"not authorized"}), 401
         
         args = self.parser.parse_args()
         pnon = args["pin"]
@@ -139,17 +146,20 @@ class updatePinApi(Resource):
 
             if not query:
 
-                return {"error":"invalid pin name or number"}, 400
+                return ({"error":"invalid pin name or number"}), 400
         
         if newState != "1" and newState != "0":
-            return {"error":"invalid update value"}, 400
+
+            return ({"error":"invalid update value"}), 400
         
         onlineState = esp32.query.filter_by(pinName='OS').first()
         status = onlineState.switchState
 
         if status == "0":
             
-            return {"Alert":"Esp is offline, can't update"}, 503
+            socketio.emit("offline", {"Alert":"Esp is offline. Current state unknown"})
+
+            return ({"Alert":"Esp is offline. Current state unknown"}), 503
         
         query.switchState = newState
 
@@ -157,14 +167,16 @@ class updatePinApi(Resource):
 
             db.session.commit()
 
-            return ({"Message": "pin updated successfully"}),200
+            socketio.emit("webUpdate", {"stateUpdated": newState})
+
+            return ({"success": "pin updated successfully"}),200
         
         except Exception as e:
 
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "Failed to update pin", "Details": str(e)}), 500 
+            return ({"error": "Failed to update pin", "Details": str(e)}), 500 
         
         finally:
 
@@ -189,7 +201,7 @@ class queryApi(Resource):
 
             return jsonify(success = state)
         
-        return ({"error": "invalid pin"}), 404
+        return jsonify({"error": "invalid pin"}), 404
 
 class synchardchangesApi(Resource):
 
@@ -209,7 +221,7 @@ class synchardchangesApi(Resource):
 
         if not query:
 
-            return ({"error":"invalid pin entered"}), 400
+            return jsonify({"error":"invalid pin entered"}), 400
         
         state = query.switchState
 
@@ -221,9 +233,7 @@ class synchardchangesApi(Resource):
 
             db.session.commit()
 
-            value = {"update":status}
-
-            socketio.emit("localUpdate", value)
+            socketio.emit("localUpdate", {"update":status})
 
             return jsonify(success = status)   
              
@@ -250,10 +260,9 @@ class syncEmergencyApi(Resource):
         args = self.parser.parse_args()
         emergency = args["emergency"]
 
-        value = {"emergency":emergency}
-        socketio.emit("emergency", value)
+        socketio.emit("emergency", {"emergency":emergency})
 
-        return ({"msg":"broadcast successful"}), 200
+        return jsonify({"success":"broadcast successful"}), 200
         
 class loginApi(Resource):
 
@@ -266,7 +275,7 @@ class loginApi(Resource):
     def post(self):
 
         args = self.parser.parse_args()
-        email = args["email"]
+        email = args["email"].lower()
         password = args["password"]
 
         try:
@@ -274,16 +283,20 @@ class loginApi(Resource):
             user = users.query.filter_by(email=email).first()
             
             if not user or not check_password_hash(user.password, password):
-                return ({"msg": "incorrect credentials"})
+                return ({"error": "incorrect credentials"}), 400
 
             loggedUser = {"email":email, "username":user.username, "role":user.role, "verified":user.verifiedEmail}
             refresh_token = create_refresh_token(identity=loggedUser)
             access_token = create_access_token(identity=loggedUser, fresh=True, additional_claims={"refresh_jti": decode_token(refresh_token)["jti"]})
 
+            if user.verifiedEmail != "True":
+
+                return ({"error": "email verification not complete"}), 403
+            
             response = jsonify(
 
                 {
-                    "msg": "login successful",
+                    "success": "login successful",
                     "token":{
                         "access_token":access_token, "refresh_token":refresh_token
                     }
@@ -300,7 +313,7 @@ class loginApi(Resource):
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "Could not login", "Details": str(e)})
+            return ({"error": "could not login", "details": str(e)}),500
         
         finally:
 
@@ -308,7 +321,8 @@ class loginApi(Resource):
 
 class registerApi(Resource):
 
-    global genOtpStartTime
+    # global genOtpStartTime
+    # removed jsonify from all response in this route as it leads to server error
 
     def __init__(self):
 
@@ -320,20 +334,22 @@ class registerApi(Resource):
     def post(self):
 
         args = self.parser.parse_args()
-        email = args["email"]
-        username = args["username"]
+        email = args["email"].lower()
+        username = args["username"].lower()
         password = args["password"]
 
         existingUserName = users.query.filter_by(username=username).first()
         existingMail = users.query.filter_by(email=email).first()
 
         if existingUserName:
-            return ({"Error": "Username is already taken"})
+            return ({"error": "username is already taken"}), 400
         
         if existingMail:
-            return ({"Error": "Email already exit"})
+            return ({"error": "email already exist"}), 400
 
         otp, otpStartTime = genOTP()
+
+        global genOtpStartTime 
 
         genOtpStartTime = otpStartTime
 
@@ -346,7 +362,7 @@ class registerApi(Resource):
 
         except:
 
-            return ({"Error": "Invalid email format"})
+            return ({"error": "invalid email format"}), 400
         
         new_user = users(email=email, username=username, role="user", password=generate_password_hash(password), otp=otp)
         
@@ -355,55 +371,56 @@ class registerApi(Resource):
             db.session.add(new_user)
             db.session.commit()
 
-            return ({"Sucess": "new user created and otp sent to mail"})
+            return ({
+
+                "success": "new user created and otp sent to mail",
+                "email": email
+
+            }), 200
         
         except Exception as e:
 
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "Failed to create user", "Details": str(e)}), 500 
+            return ({"error": "failed to create user", "details": str(e)}), 500 
         
         finally:
 
             db.session.close()
 
 class verifyEmailApi(Resource):
-    @jwt_required()
+
+   # removed jsonify
+
     def __init__(self):
 
         self.parser = reqparse.RequestParser()
-        self.parser.add_argument("otp", required=True)
 
-    def put(self):
+    def post(self):
+
+        self.parser.add_argument("otp", required=True)
+        self.parser.add_argument("email", required=True)
 
         global genOtpStartTime
-        try:
-
-            user = get_jwt_identity()
-            email = user["email"]
-        
-        except ExpiredSignatureError:
-
-            # Handle the expired token error
-            return jsonify({"error": "Token has expired. Please re-authenticate."}), 401
-        
-        except:
-            
-            return jsonify({"error": "Invalid token."}), 401
-
-        logged_user = users.query.filter_by(email=email).first()
-
-        if logged_user.verifiedEmail == "True":
-
-            return {"Msg":"email verification already completed"}
 
         args = self.parser.parse_args()
         user_otp = args["otp"]
+        email = args["email"].lower()
+
+        logged_user = users.query.filter_by(email=email).first()
+
+        if not logged_user:
+
+            return ({"error": "email does not exist"}), 400
+
+        if logged_user.verifiedEmail == "True":
+
+            return ({"alert":"email verification already completed"}), 409
 
         if logged_user.otp != user_otp:
 
-            return ({"Error": "Invalid otp entered"})
+            return ({"error": "invalid otp entered"}), 400
         
         currentTime = time.time()
 
@@ -415,14 +432,14 @@ class verifyEmailApi(Resource):
 
                 db.session.commit()
 
-                return ({"error": "Expired otp, request for a new one"})
+                return ({"error": "expired otp, request for a new one"}), 400
             
             except Exception as e:
 
                 db.session.rollback()
                 error_message = str(e) 
 
-                return jsonify({"Error": "Failed to update db", "Details": str(e)}), 500 
+                return ({"error": "failed to update db", "details": str(e)}), 500 
         
             finally:
 
@@ -437,19 +454,138 @@ class verifyEmailApi(Resource):
 
             db.session.commit()
 
-            return ({"Success": "Email verified successfully"})
+            return ({"success": "email verified successfully"}), 200
         
         except Exception as e:
 
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "verification unsuccessfull", "Details": str(e)}), 500 
+            return ({"error": "verification unsuccessfull", "Details": str(e)}), 500 
         
         finally:
 
             db.session.close()
+    
+    def put(self):
 
+        self.parser.add_argument("email", required=True)
+        self.parser.add_argument("newEmail", required=True)
+
+        global genOtpStartTime
+
+        args = self.parser.parse_args()
+        updatedEmail = args["newEmail"].lower()
+        email = args["email"].lower()
+
+
+        logged_user = users.query.filter_by(email=email).first()
+        confirmUpdatedEmail = users.query.filter_by(email=updatedEmail).first()
+
+        if confirmUpdatedEmail:
+
+            return ({"error": "email already exist, login instead"}), 409
+        
+        if logged_user:
+
+            otp, otpStartTime = genOTP()
+
+            genOtpStartTime = otpStartTime
+
+            msg = Message('Email Verification', recipients=[updatedEmail])
+            msg.html = render_template("emailVerification.html", otp=otp)
+
+            try:
+
+                mail.send(msg)
+
+            except:
+
+                return ({"Error": "Invalid email format"}), 400
+
+            logged_user.otp = otp
+            logged_user.email = updatedEmail
+
+            try:
+
+                db.session.commit()
+                    
+                return ({
+
+                    "success": "email update completed and otp sent to new email",
+                    "email": updatedEmail
+
+                }), 200
+            
+            except Exception as e:
+
+                db.session.rollback()
+                error_message = str(e) 
+
+                return ({"error": "update unsuccessfull", "details": str(e)}), 500 
+        
+            finally:
+
+                db.session.close()
+                    
+        return ({"error":"invalid old email"}), 400       
+
+    def get(self):
+
+        self.parser.add_argument("email", required=True)
+
+        try:
+            
+            global genOtpStartTime
+            args = self.parser.parse_args()
+
+            email = args["email"].lower()
+            
+            logged_user = users.query.filter_by(email=email).first()
+
+            if logged_user.verifiedEmail == "True":
+
+                return ({"alert":"email verification already completed"}), 409
+            
+            otp, otpStartTime = genOTP()
+
+            genOtpStartTime = otpStartTime
+
+            msg = Message('Industrial IOT email Verification', recipients=[email])
+            msg.html = render_template("emailVerification.html", otp=otp)
+            
+            try:
+
+                mail.send(msg)
+
+            except:
+
+                return ({"error": "invalid email format"}), 400
+
+            logged_user.otp = otp
+
+            try:
+                db.session.commit()
+
+                return ({"success": "otp sent to mail"}), 200
+            
+            except Exception as e:
+
+                db.session.rollback()
+                error_message = str(e) 
+
+                return ({"error": "could not update db", "details": str(e)}), 500 
+        
+            finally:
+
+                db.session.close()
+        
+        except Exception as e:
+
+            error_message = str(e) 
+
+            return ({"error": "OTP generation failed", "details": str(e)}), 500
+    
 class genOtpApi(Resource):
     @jwt_required()
     def get(self):
@@ -493,7 +629,7 @@ class genOtpApi(Resource):
                 db.session.rollback()
                 error_message = str(e) 
 
-                return jsonify({"Error": "could not send to mail", "Details": str(e)}), 500 
+                return ({"Error": "could not send to mail", "Details": str(e)}), 500 
         
             finally:
 
@@ -512,13 +648,13 @@ class resetPasswordApi(Resource):
         
         self.parser.add_argument("email", required=True)
         args = self.parser.parse_args()
-        email = args["email"]
+        email = args["email"].lower()
 
         logged_user = users.query.filter_by(email=email).first()
 
         if not logged_user:
 
-            return ({"Error":"Incorrect email"})
+            return ({"error":"incorrect email"}), 400
         
         global genOtpStartTime
 
@@ -543,16 +679,16 @@ class resetPasswordApi(Resource):
 
             except:
 
-                return ({"Error": "Invalid email format"})
+                return ({"error": "invalid email format"}), 400
 
-            return ({"Msg": "Token sent to email"})
+            return ({"success": "token sent to email"}), 200
         
         except Exception as e:
 
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "Failed to store token", "Details": str(e)}), 500 
+            return ({"error": "failed to store token", "details": str(e)}), 500 
         
         finally:
 
@@ -574,7 +710,7 @@ class resetPasswordApi(Resource):
 
         if not check_password_hash(logged_user.password, oldPass):
 
-            return ({"Error":"Incorrect old password, logout to reset password or try again"}), 400
+            return ({"error":"incorrect old password, logout to reset password or try again"}), 400
         
         logged_user.password = generate_password_hash(newPass)
 
@@ -587,13 +723,13 @@ class resetPasswordApi(Resource):
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "Failed to update password", "Details": str(e)}), 500 
+            return ({"error": "failed to update password", "details": str(e)}), 500 
         
         finally:
 
             db.session.close()
 
-        return ({"Msg": "Password updated successfully"})
+        return ({"success": "password updated successfully"}), 200
     
 class resetOutTokenApi(Resource):
 
@@ -607,7 +743,7 @@ class resetOutTokenApi(Resource):
 
         if 'access_token_cookie' in request.cookies:   
 
-            return ({"Error": "User is logged in"}), 401
+            return jsonify({"error": "user is logged in"}), 401
         
         args = self.parser.parse_args()
         token = args["token"]
@@ -622,11 +758,11 @@ class resetOutTokenApi(Resource):
 
         if not verifyUser:
                 
-            return ({"Error":"Invalid Token"})
+            return jsonify({"error":"invalid token"}), 400
         
         if verifyUser.token != token:
 
-            return ({"Error":"Invalid Token"})
+            return jsonify({"error":"invalid token"}), 400
             
         currentTime = time.time()
 
@@ -638,14 +774,14 @@ class resetOutTokenApi(Resource):
 
                 db.session.commit()
 
-                return ({"error": "Expired token"}),400
+                return jsonify({"error": "expired token"}),400
             
             except Exception as e:
 
                 db.session.rollback()
                 error_message = str(e) 
 
-                return jsonify({"Error": "Failed to trash expired token", "Details": str(e)}), 500 
+                return jsonify({"error": "failed to trash expired token", "details": str(e)}), 500 
         
             finally:
 
@@ -659,14 +795,14 @@ class resetOutTokenApi(Resource):
 
             db.session.commit()
 
-            return ({"Success":"Password updated successfully"})
+            return jsonify({"success":"password updated successfully"}), 200
         
         except Exception as e:
 
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "Password update unsuccessfull", "Details": str(e)}), 500 
+            return jsonify({"error": "password update unsuccessfull", "details": str(e)}), 500 
         
         finally:
 
@@ -677,7 +813,7 @@ class logOutApi(Resource):
     def post(self):
 
         jti = get_jwt()["jti"]
-        response = jsonify({"msg": "logout successful"})
+        response = jsonify({"success": "logout successful"})
 
         unset_jwt_cookies(response)
 
@@ -698,7 +834,7 @@ class logOutApi(Resource):
             db.session.rollback()
             error_message = str(e) 
 
-            return jsonify({"Error": "logout unsuccesful", "Details": str(e)}), 500 
+            return jsonify({"error": "logout unsuccesful", "details": str(e)}), 500 
         
         finally:
 
@@ -715,8 +851,8 @@ class updateRoleApi(Resource):
     def put(self):
 
         args = self.parser.parse_args()
-        userEmail = args["email"]
-        newRole = args["role"]
+        userEmail = args["email"].lower()
+        newRole = args["role"].lower()
 
         user = get_jwt_identity()
         email = user["email"]
@@ -749,7 +885,7 @@ class updateRoleApi(Resource):
         try:
             db.session.commit()
 
-            return ({"Msg": userEmail + " role, has been updated successfully"})
+            return ({"success": userEmail + " role, has been updated successfully"})
         
         except Exception as e:
 
@@ -772,7 +908,7 @@ class deleteApi(Resource):
     def delete(self):
 
         args = self.parser.parse_args()
-        userEmail = args["email"]
+        userEmail = args["email"].lower()
 
         user = get_jwt_identity()
         role = user["role"]
@@ -796,7 +932,7 @@ class deleteApi(Resource):
             db.session.delete(del_user)
             db.session.commit()
 
-            return ({"Msg": userEmail + " has been deleted from the database"})
+            return ({"success": userEmail + " has been deleted from the database"})
         
         except Exception as e:
 
@@ -847,7 +983,7 @@ api.add_resource(loginApi, '/api/login', '/api/login/')
 api.add_resource(usersApi, '/api/users', '/api/users/')
 api.add_resource(deleteApi, '/api/delete', '/api/delete/')
 api.add_resource(logOutApi, '/api/logout', '/api/logout/')
-api.add_resource(genOtpApi, '/api/genotp', '/api/genotp/')
+# api.add_resource(genOtpApi, '/api/genotp', '/api/genotp/')
 api.add_resource(pinStatusApi, '/api/status', '/api/status/')
 api.add_resource(registerApi, '/api/register', '/api/register/')
 api.add_resource(refreshApi, '/api/refreshjwt', '/api/refreshjwt/')
